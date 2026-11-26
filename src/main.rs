@@ -1,4 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod layers;
 mod media;
 mod model;
 mod playback;
@@ -18,6 +19,8 @@ struct Editor {
     saved: Project,
     path: Option<PathBuf>,
     selected: Option<u64>,
+    families: Vec<String>,
+    canvas_drag: Option<Project>,
     undo: Vec<Project>,
     redo: Vec<Project>,
     zoom: f32,
@@ -34,7 +37,7 @@ struct Editor {
     export: Option<(render::Cancel, mpsc::Receiver<render::ExportEvent>)>,
     progress: f32,
 }
-fn fonts(ctx: &egui::Context) {
+fn fonts(ctx: &egui::Context) -> Vec<String> {
     let mut db = cosmic_text::fontdb::Database::new();
     db.load_system_fonts();
     for name in [
@@ -62,10 +65,17 @@ fn fonts(ctx: &egui::Context) {
             break;
         }
     }
+    let mut names: Vec<_> = db
+        .faces()
+        .filter_map(|f| f.families.first().map(|(s, _)| s.clone()))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 impl Editor {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        fonts(&cc.egui_ctx);
+        let families = fonts(&cc.egui_ctx);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         let (inbox, imports) = mpsc::channel();
         let mut app = Self {
@@ -73,6 +83,8 @@ impl Editor {
             saved: Project::default(),
             path: None,
             selected: None,
+            families,
+            canvas_drag: None,
             undo: vec![],
             redo: vec![],
             zoom: 1.,
@@ -154,10 +166,15 @@ impl Editor {
                         }
                     }
                     let start = self.p.end();
-                    self.selected = Some(self.p.place(&a, start, 0));
+                    let first = self.p.assets.is_empty();
+                    if first {
+                        self.selected = Some(self.p.place(&a, start, 0));
+                    }
                     self.p.assets.push(a);
                     self.record(before);
-                    self.seek(start);
+                    if first {
+                        self.seek(start);
+                    }
                 }
                 Err(s) => self.status = s,
             }
@@ -271,6 +288,9 @@ impl Editor {
         });
     }
     fn library(&mut self, ui: &mut egui::Ui) {
+        if ui.button("テキストを追加").clicked() {
+            self.add_title();
+        }
         ui.heading("素材");
         ui.separator();
         for a in self.p.assets.clone() {
@@ -279,6 +299,16 @@ impl Editor {
             ui.small(format!("{:.1} 秒", a.duration));
             if !a.path.exists() && ui.button("素材を再指定…").clicked() {
                 self.relink(a.id);
+            }
+            if a.video.is_some() && ui.small_button("上に重ねる").clicked() {
+                let before = self.p.clone();
+                let lane = self.front_lane();
+                let id = self.p.place(&a, self.cursor, lane);
+                if let Some(c) = self.p.clips.iter_mut().find(|c| c.id == id) {
+                    c.layout.scale = 0.45;
+                }
+                self.selected = Some(id);
+                self.record(before);
             }
             if ui.small_button("末尾につなぐ").clicked() {
                 let before = self.p.clone();
@@ -320,6 +350,7 @@ impl Editor {
         ui.label(format!("{} × {}", self.p.width, self.p.height));
         if let Some(c) = self.selected.and_then(|id| self.p.clip(id)).cloned() {
             ui.separator();
+            self.layer_settings(ui, c.id);
             ui.label("クリップ（フレーム）");
             for (label, value, handle) in [
                 ("開始", c.start, Handle::Body),
@@ -346,6 +377,7 @@ impl Editor {
             let scale = (avail.width() / size.x).min(avail.height() / size.y);
             let rect = egui::Rect::from_center_size(avail.center(), size * scale);
             ui.put(rect, egui::Image::new(t).fit_to_exact_size(rect.size()));
+            self.overlay_handles(ui, rect);
         } else {
             ui.allocate_ui_at_rect(avail, |ui| {
                 ui.centered_and_justified(|ui| {

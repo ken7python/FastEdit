@@ -41,6 +41,10 @@ pub struct Clip {
     pub len: i64,
     pub offset: i64,
     pub link: Option<u64>,
+    #[serde(default)]
+    pub layout: crate::layers::Layout,
+    #[serde(default)]
+    pub title: Option<crate::layers::Title>,
 }
 impl Clip {
     pub fn end(&self) -> i64 {
@@ -101,6 +105,8 @@ impl Project {
                     len,
                     offset: 0,
                     link: Some(group),
+                    layout: Default::default(),
+                    title: None,
                 });
             }
         }

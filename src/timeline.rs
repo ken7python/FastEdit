@@ -169,8 +169,17 @@ impl Editor {
                         && let Some((p, handle, scale)) = &self.drag
                     {
                         self.p = p.clone();
-                        self.p
-                            .adjust(c.id, *handle, (resp.drag_delta().x / scale).round() as i64);
+                        self.p.adjust(
+                            c.id,
+                            *handle,
+                            (ui.input(|i| {
+                                i.pointer
+                                    .press_origin()
+                                    .zip(i.pointer.interact_pos())
+                                    .map_or(0., |(a, b)| b.x - a.x)
+                            }) / scale)
+                                .round() as i64,
+                        );
                         self.invalidate();
                     }
                     if resp.drag_stopped()
