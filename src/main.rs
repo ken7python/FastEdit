@@ -3,6 +3,7 @@ mod media;
 mod model;
 mod playback;
 mod render;
+mod timeline;
 use eframe::egui::{self, Color32, RichText};
 use model::*;
 use std::{
@@ -14,6 +15,10 @@ use std::{
 struct Editor {
     p: Project,
     selected: Option<u64>,
+    undo: Vec<Project>,
+    redo: Vec<Project>,
+    zoom: f32,
+    drag: Option<(Project, Handle, f32)>,
     cursor: i64,
     preview: Option<playback::Preview>,
     device: Option<playback::Device>,
@@ -63,6 +68,10 @@ impl Editor {
         let mut app = Self {
             p: Project::default(),
             selected: None,
+            undo: vec![],
+            redo: vec![],
+            zoom: 1.,
+            drag: None,
             cursor: 0,
             preview: None,
             device: playback::Device::open(),
@@ -126,6 +135,7 @@ impl Editor {
             self.importing = false;
             match msg {
                 Ok(mut a) => {
+                    let before = self.p.clone();
                     a.id = self.p.id();
                     if self.p.clips.is_empty() && a.video.is_some() {
                         self.p.width = a.width.max(2);
@@ -137,6 +147,7 @@ impl Editor {
                     let start = self.p.end();
                     self.selected = Some(self.p.place(&a, start, 0));
                     self.p.assets.push(a);
+                    self.record(before);
                     self.seek(start);
                 }
                 Err(s) => self.status = s,
@@ -216,6 +227,18 @@ impl Editor {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.heading("FastEdit");
+            if ui
+                .add_enabled(!self.undo.is_empty(), egui::Button::new("元に戻す"))
+                .clicked()
+            {
+                self.history(true);
+            }
+            if ui
+                .add_enabled(!self.redo.is_empty(), egui::Button::new("やり直す"))
+                .clicked()
+            {
+                self.history(false);
+            }
             ui.separator();
             if ui.button("素材を追加").clicked() {
                 self.picked();
@@ -245,7 +268,9 @@ impl Editor {
             ui.label(RichText::new(name.as_ref()).strong());
             ui.small(format!("{:.1} 秒", a.duration));
             if ui.small_button("末尾につなぐ").clicked() {
+                let before = self.p.clone();
                 self.selected = Some(self.p.place(&a, self.p.end(), 0));
+                self.record(before);
                 self.invalidate();
             }
             ui.separator();
@@ -275,10 +300,29 @@ impl Editor {
         {
             self.seek(pos);
         }
+        self.tracks(ui);
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
         ui.heading("設定");
         ui.label(format!("{} × {}", self.p.width, self.p.height));
+        if let Some(c) = self.selected.and_then(|id| self.p.clip(id)).cloned() {
+            ui.separator();
+            ui.label("クリップ（フレーム）");
+            for (label, value, handle) in [
+                ("開始", c.start, Handle::Body),
+                ("長さ", c.len, Handle::Right),
+            ] {
+                let mut n = value;
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    if ui.add(egui::DragValue::new(&mut n)).changed() {
+                        let old = self.p.clone();
+                        self.p.adjust(c.id, handle, n - value);
+                        self.record(old);
+                    }
+                });
+            }
+        }
     }
     fn canvas(&mut self, ui: &mut egui::Ui) {
         let avail = ui.available_rect_before_wrap();
