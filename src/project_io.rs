@@ -72,7 +72,7 @@ fn load(path: &Path) -> Result<Project> {
 }
 impl Clip {
     pub fn valid_source(&self, p: &Project) -> bool {
-        p.assets.iter().any(|a| a.id == self.asset)
+        self.title.is_some() || p.assets.iter().any(|a| a.id == self.asset)
     }
 }
 impl Editor {

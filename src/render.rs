@@ -75,30 +75,39 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
         {
             continue;
         }
-        let asset = p
-            .assets
-            .iter()
-            .find(|a| a.id == c.asset)
-            .context("素材が見つかりません")?;
+        let asset = p.assets.iter().find(|a| a.id == c.asset);
+        let text_path = scratch.path().join(format!("text-{input}.png"));
+        let (path, still) = if let Some(t) = &c.title {
+            t.raster(p, &text_path)?;
+            (text_path.as_path(), true)
+        } else {
+            let a = asset.context("素材が見つかりません")?;
+            (a.path.as_path(), a.image)
+        };
         let delay = rate.seconds(begin - from);
         let duration = rate.seconds(finish - begin);
         let seek = rate.seconds(c.offset + begin - c.start);
-        if asset.image {
+        if still {
             cmd.args(["-loop", "1", "-framerate", &fps]);
         } else if seek > 0.0 {
             cmd.args(["-ss", &format!("{seek:.12}")]);
         }
         cmd.args(["-threads", "2", "-t", &format!("{duration:.12}"), "-i"])
-            .arg(&asset.path);
+            .arg(path);
         match c.kind {
             Kind::Video => {
-                let stream = asset.video.context("映像がありません")?;
-                filters.push(format!("[{input}:{stream}]setpts=PTS-STARTPTS,fps={fps},scale={w}:{h}:force_original_aspect_ratio=decrease,setsar=1,setpts=PTS+{delay:.12}/TB[layer{input}]"));
-                filters.push(format!("[{last}][layer{input}]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass:enable='gte(t,{delay:.12})*lt(t,{:.12})'[v{}]",delay+duration,input+1));
+                let stream = asset.and_then(|a| a.video).unwrap_or(0);
+                let (width, height) = c.visual_size(p);
+                let sw = (width * w as f32 / p.width as f32).round().max(1.) as u32;
+                let sh = (height * h as f32 / p.height as f32).round().max(1.) as u32;
+                let x = c.layout.x;
+                let y = c.layout.y;
+                filters.push(format!("[{input}:{stream}]setpts=PTS-STARTPTS,fps={fps},scale={sw}:{sh},setsar=1,setpts=PTS+{delay:.12}/TB[layer{input}]"));
+                filters.push(format!("[{last}][layer{input}]overlay=x=W*{x}-w/2:y=H*{y}-h/2:eof_action=pass:enable='gte(t,{delay:.12})*lt(t,{:.12})'[v{}]",delay+duration,input+1));
                 last = format!("v{}", input + 1);
             }
             Kind::Audio => {
-                let stream = asset.audio.context("音声がありません")?;
+                let stream = asset.and_then(|a| a.audio).context("音声がありません")?;
                 let samples = (delay * 48000.0).round() as i64;
                 filters.push(format!("[{input}:{stream}]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,adelay={samples}S:all=1[a{input}]"));
                 sounds.push(format!("[a{input}]"));
