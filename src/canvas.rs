@@ -10,12 +10,7 @@ impl Editor {
                 egui::ComboBox::from_id_salt("size")
                     .selected_text("サイズを選択…")
                     .show_ui(ui, |ui| {
-                        for (label, w, h) in [
-                            ("Full HD  •  1920 × 1080", 1920, 1080),
-                            ("4K UHD  •  3840 × 2160", 3840, 2160),
-                            ("縦型  •  1080 × 1920", 1080, 1920),
-                            ("正方形  •  1080 × 1080", 1080, 1080),
-                        ] {
+                        for (label, w, h) in crate::home::FORMATS {
                             if ui
                                 .selectable_label(self.p.width == w && self.p.height == h, label)
                                 .clicked()

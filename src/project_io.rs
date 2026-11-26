@@ -135,46 +135,48 @@ impl Editor {
             return;
         }
         match load(&path) {
-            Ok(p) => {
-                self.saved = p.clone();
-                self.p = p;
-                self.path = Some(path);
-                self.undo.clear();
-                self.redo.clear();
-                self.selected = None;
-                self.texture = None;
-                (self.inbox, self.imports) = crate::media::import_queue();
-                self.importing = 0;
-                self.status.clear();
-                self.seek(0);
-            }
+            Ok(p) => self.enter_project(p, Some(path)),
             Err(e) => self.status = e.to_string(),
+        }
+    }
+    pub fn enter_project(&mut self, p: Project, path: Option<std::path::PathBuf>) {
+        self.home = false;
+        self.return_to_editor = false;
+        self.drag = None;
+        self.canvas_drag = None;
+        self.saved = p.clone();
+        self.p = p;
+        self.path = path;
+        self.undo.clear();
+        self.redo.clear();
+        self.selected = None;
+        self.texture = None;
+        (self.inbox, self.imports) = crate::media::import_queue();
+        self.importing = 0;
+        self.status.clear();
+        self.seek(0);
+    }
+    pub fn choose_project(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("FastEdit", &["fastedit"])
+            .pick_file()
+        {
+            self.open_project(path);
         }
     }
     pub fn file_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("ファイル", |ui| {
             if ui.button("新規").clicked() {
                 ui.close_menu();
-                if self.allow_discard() {
-                    self.p = Project::default();
-                    self.saved = self.p.clone();
-                    self.path = None;
-                    self.selected = None;
-                    self.undo.clear();
-                    self.redo.clear();
-                    (self.inbox, self.imports) = crate::media::import_queue();
-                    self.importing = 0;
-                    self.seek(0);
-                }
+                self.preview = None;
+                self.home = true;
+                self.return_to_editor = true;
+                self.new_size = [1920, 1080];
+                self.status.clear();
             }
             if ui.button("プロジェクトを開く…").clicked() {
                 ui.close_menu();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("FastEdit", &["fastedit"])
-                    .pick_file()
-                {
-                    self.open_project(path);
-                }
+                self.choose_project();
             }
             if ui.button("別名で保存…").clicked() {
                 ui.close_menu();

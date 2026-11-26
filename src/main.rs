@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod asset_preview;
 mod canvas;
+mod home;
 mod layers;
 mod media;
 mod model;
@@ -18,6 +19,9 @@ use std::{
 
 struct Editor {
     p: Project,
+    home: bool,
+    new_size: [u32; 2],
+    return_to_editor: bool,
     saved: Project,
     path: Option<PathBuf>,
     selected: Option<u64>,
@@ -92,6 +96,9 @@ impl Editor {
         let (inbox, imports) = media::import_queue();
         let mut app = Self {
             p: Project::default(),
+            home: true,
+            new_size: [1920, 1080],
+            return_to_editor: false,
             saved: Project::default(),
             path: None,
             selected: None,
@@ -126,6 +133,7 @@ impl Editor {
             self.open_project(path);
             return;
         }
+        self.home = false;
         if self.inbox.send(path).is_ok() {
             self.importing += 1;
         }
@@ -171,12 +179,8 @@ impl Editor {
                 Ok(mut a) => {
                     let before = self.p.clone();
                     a.id = self.p.id();
-                    if self.p.clips.is_empty() && a.video.is_some() {
-                        self.p.width = a.width.max(2);
-                        self.p.height = a.height.max(2);
-                        if !a.image {
-                            self.p.rate = a.rate;
-                        }
+                    if self.p.clips.is_empty() && a.video.is_some() && !a.image {
+                        self.p.rate = a.rate;
                     }
                     let start = self.p.end();
                     let first = self.p.assets.is_empty();
@@ -492,9 +496,6 @@ impl eframe::App for Editor {
         } else if self.close_approved && self.export.is_none() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
-            self.save_project(false);
-        }
         for path in ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -503,6 +504,13 @@ impl eframe::App for Editor {
                 .collect::<Vec<_>>()
         }) {
             self.import(path);
+        }
+        if self.home {
+            self.project_home(ctx);
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.save_project(false);
         }
         if !ctx.wants_keyboard_input() {
             if ctx.input_mut(|i| {
