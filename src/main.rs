@@ -27,6 +27,7 @@ struct Editor {
     selected: Option<u64>,
     cache: asset_preview::Cache,
     families: Vec<String>,
+    title_edit: Option<layers::TitleEdit>,
     canvas_drag: Option<Project>,
     undo: Vec<Project>,
     redo: Vec<Project>,
@@ -105,6 +106,7 @@ impl Editor {
             selected: None,
             cache: asset_preview::Cache::new(),
             families,
+            title_edit: None,
             canvas_drag: None,
             undo: vec![],
             redo: vec![],
@@ -526,7 +528,7 @@ impl eframe::App for Editor {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.save_project(false);
         }
-        if !ctx.wants_keyboard_input() {
+        if self.title_edit.is_none() && !ctx.wants_keyboard_input() {
             if ctx.input_mut(|i| {
                 i.consume_key(
                     egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
@@ -543,7 +545,10 @@ impl eframe::App for Editor {
                 self.action(1);
             }
         }
-        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+        if self.title_edit.is_none()
+            && !ctx.wants_keyboard_input()
+            && ctx.input(|i| i.key_pressed(egui::Key::Space))
+        {
             self.toggle();
         }
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.header(ui));
@@ -570,6 +575,7 @@ impl eframe::App for Editor {
                 egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui))
             });
         egui::CentralPanel::default().show(ctx, |ui| self.canvas(ui));
+        self.title_dialog(ctx);
     }
 }
 impl Drop for Editor {

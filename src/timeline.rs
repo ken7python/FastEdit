@@ -213,6 +213,9 @@ impl Editor {
                             FontId::proportional(12.),
                             Color32::WHITE,
                         );
+                    if resp.double_clicked() && c.title.is_some() {
+                        self.edit_title(c.id);
+                    }
                     if resp.clicked() {
                         if c.kind == Kind::Video {
                             self.active_lane = c.lane;

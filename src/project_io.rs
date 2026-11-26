@@ -142,6 +142,7 @@ impl Editor {
     }
     pub fn enter_project(&mut self, p: Project, path: Option<std::path::PathBuf>) {
         self.home = false;
+        self.title_edit = None;
         self.active_lane = 0;
         self.return_to_editor = false;
         self.drag = None;
