@@ -119,13 +119,13 @@ impl Editor {
                 .as_ref()
                 .map_or(self.p.end(), |(p, _, _)| p.end())
                 .max(1);
-            let visible_frames = span + span.max(10) / 10;
+            let visible_frames = span.saturating_add(span.max(10) / 10);
             let pixels = (width - 52.) / visible_frames as f32;
             let x = |frame: i64| origin + frame as f32 * pixels;
             let to_frame = |px: f32| ((px - origin) / pixels).round() as i64;
             let painter = ui.painter_at(rect);
             for n in 0..=10 {
-                let f = visible_frames * n / 10;
+                let f = (i128::from(visible_frames) * n / 10) as i64;
                 painter.text(
                     pos2(x(f) + 2., rect.top() + 2.),
                     Align2::LEFT_TOP,

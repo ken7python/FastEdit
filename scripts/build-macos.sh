@@ -16,5 +16,5 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 ditto "$app" "$stage/FastEdit.app"
 ln -s /Applications "$stage/Applications"
-hdiutil create -ov -format UDZO -fs HFS+ -volname FastEdit -srcfolder "$stage" dist/FastEdit-0.1.0-macOS-arm64.dmg
-hdiutil verify dist/FastEdit-0.1.0-macOS-arm64.dmg
+hdiutil create -ov -format UDZO -fs HFS+ -volname FastEdit -srcfolder "$stage" dist/FastEdit-0.2.0-macOS-arm64.dmg
+hdiutil verify dist/FastEdit-0.2.0-macOS-arm64.dmg
