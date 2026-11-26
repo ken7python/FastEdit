@@ -1,0 +1,35 @@
+name: Publish macOS DMG
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Package released app and verify mounted image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          base=FastEdit-0.1.0-macOS-arm64
+          gh release download v0.1.0 -p "$base.zip" -p SHA256SUMS.txt
+          grep "  $base.zip$" SHA256SUMS.txt | shasum -a 256 -c -
+          mkdir stage mounted
+          ditto -x -k "$base.zip" stage
+          codesign --verify --deep --strict stage/FastEdit.app
+          ln -s /Applications stage/Applications
+          hdiutil create -format UDZO -fs HFS+ -volname FastEdit -srcfolder stage "$base.dmg"
+          hdiutil verify "$base.dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$PWD/mounted" "$base.dmg"
+          codesign --verify --deep --strict mounted/FastEdit.app
+          test -x mounted/FastEdit.app/Contents/MacOS/FastEdit
+          test "$(readlink mounted/Applications)" = /Applications
+          hdiutil detach "$PWD/mounted"
+          awk '!/\.dmg$/' SHA256SUMS.txt > sums
+          shasum -a 256 "$base.dmg" >> sums
+          mv sums SHA256SUMS.txt
+          gh release upload v0.1.0 "$base.dmg" SHA256SUMS.txt --clobber
