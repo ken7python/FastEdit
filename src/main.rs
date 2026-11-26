@@ -34,6 +34,7 @@ struct Editor {
     zoom: f32,
     active_lane: u32,
     drag: Option<(Project, Handle, f32)>,
+    trim_flash: Option<timeline::TrimFeedback>,
     cursor: i64,
     preview: Option<playback::Preview>,
     device: Option<playback::Device>,
@@ -113,6 +114,7 @@ impl Editor {
             zoom: 1.,
             active_lane: 0,
             drag: None,
+            trim_flash: None,
             cursor: 0,
             preview: None,
             device: playback::Device::open(),
@@ -465,6 +467,9 @@ impl Editor {
                     if ui.add(egui::DragValue::new(&mut n)).changed() {
                         let old = self.p.clone();
                         self.p.adjust(c.id, handle, n - value);
+                        if handle == Handle::Right {
+                            self.finish_trim(&old, c.id, handle);
+                        }
                         self.record(old);
                     }
                 });

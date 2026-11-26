@@ -1,7 +1,27 @@
 use super::*;
 use egui::{Align2, FontId, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
+pub struct TrimFeedback {
+    id: u64,
+    original: i64,
+    edge: Handle,
+    at: Instant,
+}
 impl Editor {
+    pub fn finish_trim(&mut self, before: &Project, id: u64, edge: Handle) {
+        if edge != Handle::Body
+            && let (Some(old), Some(current)) = (before.clip(id), self.p.clip(id))
+            && old.len != current.len
+        {
+            self.trim_flash = Some(TrimFeedback {
+                id,
+                original: old.len,
+                edge,
+                at: Instant::now(),
+            });
+        }
+    }
+
     pub fn record(&mut self, before: Project) {
         if before == self.p {
             return;
@@ -94,12 +114,18 @@ impl Editor {
             let height = 24. + rows.len() as f32 * 31.;
             let (rect, area) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
             let origin = rect.left() + 50.;
-            let pixels = (width - 52.) / self.p.end().max(1) as f32;
+            let span = self
+                .drag
+                .as_ref()
+                .map_or(self.p.end(), |(p, _, _)| p.end())
+                .max(1);
+            let visible_frames = span + span.max(10) / 10;
+            let pixels = (width - 52.) / visible_frames as f32;
             let x = |frame: i64| origin + frame as f32 * pixels;
             let to_frame = |px: f32| ((px - origin) / pixels).round() as i64;
             let painter = ui.painter_at(rect);
             for n in 0..=10 {
-                let f = self.p.end() * n / 10;
+                let f = visible_frames * n / 10;
                 painter.text(
                     pos2(x(f) + 2., rect.top() + 2.),
                     Align2::LEFT_TOP,
@@ -213,6 +239,53 @@ impl Editor {
                             FontId::proportional(12.),
                             Color32::WHITE,
                         );
+                    let active = self
+                        .drag
+                        .as_ref()
+                        .filter(|(_, edge, _)| *edge != Handle::Body && self.selected == Some(c.id))
+                        .and_then(|(p, edge, _)| p.clip(c.id).map(|old| (old.len, *edge, 1.0_f32)));
+                    let recent = self
+                        .trim_flash
+                        .as_ref()
+                        .filter(|f| f.id == c.id && f.at.elapsed().as_secs_f32() < 0.65)
+                        .map(|f| (f.original, f.edge, 1. - f.at.elapsed().as_secs_f32() / 0.65));
+                    if let Some((initial, edge, alpha)) = active.or(recent) {
+                        let accent =
+                            Color32::from_rgba_unmultiplied(30, 215, 96, (alpha * 255.) as u8);
+                        let tip = if edge == Handle::Left {
+                            block.left()
+                        } else {
+                            block.right()
+                        };
+                        painter.line_segment(
+                            [pos2(tip, y), pos2(tip, y + 27.)],
+                            Stroke::new(4_f32, accent),
+                        );
+                        let seconds = self.p.rate.seconds(c.len);
+                        let diff = self.p.rate.seconds(c.len - initial);
+                        let label = format!("{seconds:.2} 秒  ({diff:+.2})");
+                        let tx = tip.clamp(rect.left() + 70., rect.right() - 70.);
+                        let badge = Rect::from_center_size(pos2(tx, y + 13.), vec2(132., 23.));
+                        painter.rect_filled(
+                            badge,
+                            8.,
+                            Color32::from_black_alpha((230. * alpha) as u8),
+                        );
+                        painter.text(
+                            badge.center(),
+                            Align2::CENTER_CENTER,
+                            label,
+                            FontId::proportional(13.),
+                            accent,
+                        );
+                        ui.ctx().request_repaint();
+                    }
+                    if resp.hovered()
+                        && let Some(pos) = resp.hover_pos()
+                        && (pos.x - block.left()).min(block.right() - pos.x) < 6.
+                    {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                    }
                     if resp.double_clicked() && c.title.is_some() {
                         self.edit_title(c.id);
                     }
@@ -258,8 +331,9 @@ impl Editor {
                         self.invalidate();
                     }
                     if resp.drag_stopped()
-                        && let Some((before, _, _)) = self.drag.take()
+                        && let Some((before, edge, _)) = self.drag.take()
                     {
+                        self.finish_trim(&before, c.id, edge);
                         self.record(before);
                     }
                 }
