@@ -145,6 +145,7 @@ impl Editor {
         self.title_edit = None;
         self.active_lane = 0;
         self.return_to_editor = false;
+        self.pending_media.clear();
         self.drag = None;
         self.trim_flash = None;
         self.canvas_drag = None;

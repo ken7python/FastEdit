@@ -94,7 +94,11 @@ impl Editor {
                             height: self.new_size[1],
                             ..Default::default()
                         };
+                        let paths = std::mem::take(&mut self.pending_media);
                         self.enter_project(project, None);
+                        for path in paths {
+                            self.import(path);
+                        }
                     }
                     if ui.button("プロジェクトを開く…").clicked() {
                         self.choose_project();
@@ -103,6 +107,12 @@ impl Editor {
                         self.home = false;
                     }
                 });
+                if !self.pending_media.is_empty() {
+                    ui.label(format!(
+                        "作成時に {} 件の素材を追加",
+                        self.pending_media.len()
+                    ));
+                }
                 if !self.status.is_empty() {
                     ui.label(&self.status);
                 }

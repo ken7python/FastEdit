@@ -21,6 +21,7 @@ use std::{
 struct Editor {
     p: Project,
     home: bool,
+    pending_media: Vec<PathBuf>,
     new_size: [u32; 2],
     return_to_editor: bool,
     saved: Project,
@@ -94,6 +95,7 @@ impl Editor {
         let mut app = Self {
             p: Project::default(),
             home: true,
+            pending_media: vec![],
             new_size: [1920, 1080],
             return_to_editor: false,
             saved: Project::default(),
@@ -133,7 +135,10 @@ impl Editor {
             self.open_project(path);
             return;
         }
-        self.home = false;
+        if self.home {
+            self.pending_media.push(path);
+            return;
+        }
         if self.inbox.send(path).is_ok() {
             self.importing += 1;
         }
