@@ -146,6 +146,7 @@ impl Editor {
         self.active_lane = 0;
         self.return_to_editor = false;
         self.drag = None;
+        self.trim_flash = None;
         self.canvas_drag = None;
         self.saved = p.clone();
         self.p = p;
