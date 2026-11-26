@@ -4,9 +4,9 @@ Mac・Windows 向けの Rust 製動画エディターです。素材をドロッ
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/ken7python/FastEdit/releases) から使用する OS の ZIP を取得して展開します。
+[GitHub Releases](https://github.com/ken7python/FastEdit/releases) から使用する OS の配布ファイルを取得します。
 
-- **Mac（Apple Silicon、macOS 12 以降）** — `FastEdit.app` をアプリケーションフォルダーにコピーして起動します。初版はアドホック署名で、公証は未取得です。
+- **Mac（Apple Silicon、macOS 12 以降）** — DMG を開き、`FastEdit.app` を Applications にドラッグして起動します。初版はアドホック署名で、公証は未取得です。
 - **Windows（x64）** — 展開したフォルダー内の `FastEdit.exe` を起動します。同じフォルダーの `ffmpeg.exe` と `ffprobe.exe` も使用します。初版の Windows バイナリは未署名です。
 
 ## 使い方

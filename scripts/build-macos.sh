@@ -12,3 +12,9 @@ for name in ffmpeg ffprobe; do codesign --force --sign - "$app/Contents/MacOS/$n
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 echo "$PWD/$app"
+stage="$(mktemp -d)"
+trap 'rm -rf "$stage"' EXIT
+ditto "$app" "$stage/FastEdit.app"
+ln -s /Applications "$stage/Applications"
+hdiutil create -ov -format UDZO -fs HFS+ -volname FastEdit -srcfolder "$stage" dist/FastEdit-0.1.0-macOS-arm64.dmg
+hdiutil verify dist/FastEdit-0.1.0-macOS-arm64.dmg
