@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod asset_preview;
+mod canvas;
 mod layers;
 mod media;
 mod model;
@@ -33,11 +34,13 @@ struct Editor {
     texture: Option<egui::TextureHandle>,
     refresh: Option<Instant>,
     status: String,
-    importing: bool,
+    importing: usize,
     imports: mpsc::Receiver<Result<Asset, String>>,
-    inbox: mpsc::Sender<Result<Asset, String>>,
+    inbox: mpsc::Sender<PathBuf>,
     export: Option<(render::Cancel, mpsc::Receiver<render::ExportEvent>)>,
     progress: f32,
+    close_approved: bool,
+    lock_ratio: bool,
 }
 fn fonts(ctx: &egui::Context) -> Vec<String> {
     let mut db = cosmic_text::fontdb::Database::new();
@@ -78,8 +81,15 @@ fn fonts(ctx: &egui::Context) -> Vec<String> {
 impl Editor {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let families = fonts(&cc.egui_ctx);
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
-        let (inbox, imports) = mpsc::channel();
+        let mut visuals = egui::Visuals::dark();
+        visuals.panel_fill = Color32::from_rgb(29, 32, 39);
+        visuals.selection.bg_fill = Color32::from_rgb(47, 95, 119);
+        cc.egui_ctx.set_visuals(visuals);
+        cc.egui_ctx.style_mut(|s| {
+            s.spacing.button_padding = egui::vec2(8., 4.);
+            s.spacing.item_spacing = egui::vec2(6., 5.);
+        });
+        let (inbox, imports) = media::import_queue();
         let mut app = Self {
             p: Project::default(),
             saved: Project::default(),
@@ -98,11 +108,13 @@ impl Editor {
             texture: None,
             refresh: None,
             status: String::new(),
-            importing: false,
+            importing: 0,
             imports,
             inbox,
             export: None,
             progress: 0.0,
+            close_approved: false,
+            lock_ratio: false,
         };
         for path in std::env::args_os().skip(1) {
             app.import(path.into());
@@ -114,11 +126,9 @@ impl Editor {
             self.open_project(path);
             return;
         }
-        let tx = self.inbox.clone();
-        self.importing = true;
-        std::thread::spawn(move || {
-            let _ = tx.send(media::probe(&path).map_err(|e| format!("{} — {e}", path.display())));
-        });
+        if self.inbox.send(path).is_ok() {
+            self.importing += 1;
+        }
     }
     fn picked(&mut self) {
         if let Some(paths) = rfd::FileDialog::new().pick_files() {
@@ -156,7 +166,7 @@ impl Editor {
     }
     fn poll(&mut self, ctx: &egui::Context) {
         while let Ok(msg) = self.imports.try_recv() {
-            self.importing = false;
+            self.importing = self.importing.saturating_sub(1);
             match msg {
                 Ok(mut a) => {
                     let before = self.p.clone();
@@ -244,7 +254,15 @@ impl Editor {
         ));
     }
     fn export_dialog(&mut self) {
+        if !self.p.width.is_multiple_of(2) || !self.p.height.is_multiple_of(2) {
+            self.status = "画面サイズ設定で幅と高さを偶数に調整してください".into();
+            return;
+        }
         if let Some(path) = rfd::FileDialog::new()
+            .set_title(format!(
+                "動画を書き出す（{} × {}）",
+                self.p.width, self.p.height
+            ))
             .add_filter("MP4", &["mp4"])
             .set_file_name("FastEdit.mp4")
             .save_file()
@@ -291,10 +309,10 @@ impl Editor {
         });
     }
     fn library(&mut self, ui: &mut egui::Ui) {
+        ui.heading("素材");
         if ui.button("テキストを追加").clicked() {
             self.add_title();
         }
-        ui.heading("素材");
         ui.separator();
         for a in self.p.assets.clone() {
             if let Some(t) = self
@@ -376,7 +394,7 @@ impl Editor {
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
         ui.heading("設定");
-        ui.label(format!("{} × {}", self.p.width, self.p.height));
+        self.canvas_settings(ui);
         if let Some(c) = self.selected.and_then(|id| self.p.clip(id)).cloned() {
             ui.separator();
             self.layer_settings(ui, c.id);
@@ -445,13 +463,13 @@ impl Editor {
             ui.put(rect, egui::Image::new(t).fit_to_exact_size(rect.size()));
             self.overlay_handles(ui, rect);
         } else {
-            ui.allocate_ui_at_rect(avail, |ui| {
-                ui.centered_and_justified(|ui| {
-                    if ui.button("動画・画像・音声を追加").clicked() {
-                        self.picked();
-                    }
-                });
-            });
+            let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(200., 36.));
+            if ui
+                .put(rect, egui::Button::new("動画・画像・音声を追加"))
+                .clicked()
+            {
+                self.picked();
+            }
         }
     }
 }
@@ -459,8 +477,20 @@ impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
         self.cache.sync(ctx, &self.p.assets);
-        if ctx.input(|i| i.viewport().close_requested()) && !self.allow_discard() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if !self.close_approved {
+                self.close_approved = self.allow_discard();
+            }
+            if !self.close_approved || self.export.is_some() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+            if self.close_approved
+                && let Some((flag, _)) = &self.export
+            {
+                flag.store(true, Ordering::Relaxed);
+            }
+        } else if self.close_approved && self.export.is_none() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.save_project(false);
@@ -474,12 +504,29 @@ impl eframe::App for Editor {
         }) {
             self.import(path);
         }
+        if !ctx.wants_keyboard_input() {
+            if ctx.input_mut(|i| {
+                i.consume_key(
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                    egui::Key::Z,
+                )
+            }) {
+                self.history(false);
+            } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
+                self.history(true);
+            }
+            if ctx
+                .input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+            {
+                self.action(1);
+            }
+        }
         if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.toggle();
         }
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.header(ui));
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.label(if self.importing {
+            ui.label(if self.importing > 0 {
                 "読み込み中…"
             } else {
                 &self.status
@@ -487,7 +534,7 @@ impl eframe::App for Editor {
         });
         egui::TopBottomPanel::bottom("timeline")
             .resizable(true)
-            .default_height(180.)
+            .default_height(210.)
             .show(ctx, |ui| self.timeline(ui));
         egui::SidePanel::left("library")
             .default_width(185.)
@@ -495,7 +542,8 @@ impl eframe::App for Editor {
                 egui::ScrollArea::vertical().show(ui, |ui| self.library(ui))
             });
         egui::SidePanel::right("inspector")
-            .default_width(210.)
+            .default_width(240.)
+            .min_width(204.)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui))
             });
@@ -514,6 +562,10 @@ fn main() -> eframe::Result {
         "FastEdit",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_icon(
+                    eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
+                        .expect("bundled app icon"),
+                )
                 .with_inner_size([1220., 780.])
                 .with_min_inner_size([900., 620.]),
             ..Default::default()

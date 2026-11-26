@@ -138,8 +138,10 @@ impl Preview {
                             if used == buf.len() {
                                 if atx
                                     .send(
-                                        buf.chunks_exact(4)
-                                            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                                        buf.as_chunks::<4>()
+                                            .0
+                                            .iter()
+                                            .map(|b| f32::from_le_bytes(*b))
                                             .collect(),
                                     )
                                     .is_err()
@@ -152,8 +154,10 @@ impl Preview {
                         if used > 0 {
                             let _ = atx.send(
                                 buf[..used]
-                                    .chunks_exact(4)
-                                    .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                                    .as_chunks::<4>()
+                                    .0
+                                    .iter()
+                                    .map(|b| f32::from_le_bytes(*b))
                                     .collect(),
                             );
                         }

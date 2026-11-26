@@ -26,6 +26,12 @@ pub struct Plan {
     pub cmd: Command,
     pub scratch: tempfile::TempDir,
 }
+fn bitrate(w: u32, h: u32, r: Rate) -> String {
+    format!(
+        "{}",
+        (w as f64 * h as f64 * 0.19 / r.seconds(1)).clamp(1_500_000., 100_000_000.) as u64
+    )
+}
 pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: bool) -> Result<Plan> {
     let scratch = tempfile::tempdir()?;
     let rate = p.rate;
@@ -53,8 +59,10 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
     let audio = !matches!(output, Output::Video);
     let mut filters = vec![];
     if video {
+        let [r, g, b] = p.background;
         filters.push(format!(
-            "color=c=black:s={w}x{h}:r={fps}:d={seconds:.12}[v0]"
+            "color=c=0x{r:02x}{g:02x}{b:02x}:s={w}x{h}:r={fps},trim=end_frame={}[v0]",
+            end - from
         ));
     }
     let mut last = String::from("v0");
@@ -102,8 +110,8 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
                 let sh = (height * h as f32 / p.height as f32).round().max(1.) as u32;
                 let x = c.layout.x;
                 let y = c.layout.y;
-                filters.push(format!("[{input}:{stream}]setpts=PTS-STARTPTS,fps={fps},scale={sw}:{sh},setsar=1,setpts=PTS+{delay:.12}/TB[layer{input}]"));
-                filters.push(format!("[{last}][layer{input}]overlay=x=W*{x}-w/2:y=H*{y}-h/2:eof_action=pass:enable='gte(t,{delay:.12})*lt(t,{:.12})'[v{}]",delay+duration,input+1));
+                filters.push(format!("[{input}:{stream}]setpts=PTS-STARTPTS,fps={fps}:start_time=0,scale={sw}:{sh},setsar=1,setpts=PTS+{delay:.12}/TB[layer{input}]"));
+                filters.push(format!("[{last}][layer{input}]overlay=x=W*{x}-w/2:y=H*{y}-h/2:eof_action=repeat:enable='between(n,{},{})'[v{}]",begin-from,finish-from-1,input+1));
                 last = format!("v{}", input + 1);
             }
             Kind::Audio => {
@@ -146,15 +154,23 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
             cmd.args(["-ac", "2", "-ar", "48000", "-f", "f32le", "pipe:1"]);
         }
         Output::Movie => {
+            if cfg!(target_os = "macos") {
+                cmd.args([
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-allow_sw",
+                    "1",
+                    "-b:v",
+                    &bitrate(w, h, rate),
+                ]);
+            } else if cfg!(target_os = "windows") {
+                cmd.args(["-c:v", "h264_mf", "-b:v", &bitrate(w, h, rate)]);
+            } else {
+                cmd.args([
+                    "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-crf", "19",
+                ]);
+            }
             cmd.args([
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-threads",
-                "2",
-                "-crf",
-                "19",
                 "-pix_fmt",
                 "yuv420p",
                 "-c:a",
@@ -222,7 +238,11 @@ pub fn export(p: Project, path: &Path) -> (Cancel, mpsc::Receiver<ExportEvent>) 
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| {
-            if p.width < 2 || p.height < 2 || p.width % 2 != 0 || p.height % 2 != 0 {
+            if p.width < 2
+                || p.height < 2
+                || !p.width.is_multiple_of(2)
+                || !p.height.is_multiple_of(2)
+            {
                 bail!("幅と高さには 2 以上の偶数を指定してください");
             }
             let dest = std::fs::canonicalize(&path).ok();

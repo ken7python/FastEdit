@@ -55,7 +55,7 @@ impl Cache {
                             break;
                         }
                         let used = len + carry;
-                        for sample in buf[..used].chunks_exact(2) {
+                        for sample in buf[..used].as_chunks::<2>().0 {
                             let bin = ((n as f64 / stride) as usize).min(511);
                             peaks[bin] = peaks[bin].max(
                                 i16::from_le_bytes([sample[0], sample[1]]).unsigned_abs() as f32

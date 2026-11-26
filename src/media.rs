@@ -11,6 +11,7 @@ pub fn tool(name: &str) -> Command {
     let near = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join(&file)));
+    #[allow(unused_mut)]
     let mut c = Command::new(
         near.filter(|p| p.is_file())
             .unwrap_or_else(|| PathBuf::from(file)),
@@ -98,4 +99,21 @@ pub fn probe(path: &Path) -> Result<Asset> {
         audio: a.and_then(idx),
         image,
     })
+}
+
+pub fn import_queue() -> (
+    std::sync::mpsc::Sender<PathBuf>,
+    std::sync::mpsc::Receiver<Result<Asset, String>>,
+) {
+    let (input, requests) = std::sync::mpsc::channel::<PathBuf>();
+    let (results, output) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for path in requests {
+            let asset = probe(&path).map_err(|e| format!("{} — {e}", path.display()));
+            if results.send(asset).is_err() {
+                break;
+            }
+        }
+    });
+    (input, output)
 }
