@@ -14,6 +14,7 @@ pub struct Layout {
     pub x: f32,
     pub y: f32,
     pub scale: f32,
+    pub scale_y: Option<f32>,
     pub fill: bool,
 }
 impl Default for Layout {
@@ -22,6 +23,7 @@ impl Default for Layout {
             x: 0.5,
             y: 0.5,
             scale: 1.,
+            scale_y: None,
             fill: false,
         }
     }
@@ -88,10 +90,26 @@ impl Title {
     }
 }
 impl Clip {
+    fn preview_bounds(&self, p: &Project, canvas: egui::Rect) -> egui::Rect {
+        let (w, h) = self.visual_size(p);
+        let size = egui::vec2(
+            w / p.width as f32 * canvas.width(),
+            h / p.height as f32 * canvas.height(),
+        );
+        let center = canvas.min
+            + egui::vec2(
+                self.layout.x * canvas.width(),
+                self.layout.y * canvas.height(),
+            );
+        egui::Rect::from_center_size(center, size)
+    }
     pub fn visual_size(&self, p: &Project) -> (f32, f32) {
         if let Some(t) = &self.title {
             let (w, h) = t.dimensions(p);
-            return (w as f32 * self.layout.scale, h as f32 * self.layout.scale);
+            return (
+                w as f32 * self.layout.scale,
+                h as f32 * self.layout.scale_y.unwrap_or(self.layout.scale),
+            );
         }
         let Some(a) = p.assets.iter().find(|a| a.id == self.asset) else {
             return (1., 1.);
@@ -214,12 +232,27 @@ impl Editor {
             );
         });
         ui.horizontal(|ui| {
-            ui.label("倍率");
-            ui.add(
-                egui::DragValue::new(&mut c.layout.scale)
-                    .speed(0.01)
-                    .range(0.02..=4.0),
-            );
+            let text = c.title.is_some();
+            let old_y = c.layout.scale_y.unwrap_or(c.layout.scale);
+            ui.label(if text { "横倍率" } else { "倍率" });
+            let x = ui
+                .add(
+                    egui::DragValue::new(&mut c.layout.scale)
+                        .speed(0.01)
+                        .range(0.02..=4.),
+                )
+                .changed();
+            if text {
+                let mut y = old_y;
+                ui.label("縦倍率");
+                if ui
+                    .add(egui::DragValue::new(&mut y).speed(0.01).range(0.02..=4.))
+                    .changed()
+                    || x
+                {
+                    c.layout.scale_y = Some(y);
+                }
+            }
         });
         ui.horizontal(|ui| {
             ui.label("レーン");
@@ -228,6 +261,30 @@ impl Editor {
         self.record(before);
     }
     pub fn overlay_handles(&mut self, ui: &mut egui::Ui, canvas: egui::Rect) {
+        if self.title_edit.is_none()
+            && ui.input(|i| {
+                i.pointer
+                    .button_double_clicked(egui::PointerButton::Primary)
+            })
+            && let Some(point) = ui
+                .input(|i| i.pointer.interact_pos())
+                .filter(|p| canvas.contains(*p))
+            && let Some(hit) = self
+                .p
+                .clips
+                .iter()
+                .filter(|c| {
+                    c.kind == Kind::Video
+                        && c.start <= self.cursor
+                        && self.cursor < c.end()
+                        && c.preview_bounds(&self.p, canvas).contains(point)
+                })
+                .max_by_key(|c| c.lane)
+            && hit.title.is_some()
+        {
+            self.edit_title(hit.id);
+            return;
+        }
         let Some(c) = self
             .selected
             .and_then(|id| self.p.clip(id))
@@ -236,14 +293,8 @@ impl Editor {
         else {
             return;
         };
-        let (w, h) = c.visual_size(&self.p);
-        let size = egui::vec2(
-            w / self.p.width as f32 * canvas.width(),
-            h / self.p.height as f32 * canvas.height(),
-        );
-        let center =
-            canvas.min + egui::vec2(c.layout.x * canvas.width(), c.layout.y * canvas.height());
-        let bounds = egui::Rect::from_center_size(center, size);
+        let bounds = c.preview_bounds(&self.p, canvas);
+        let size = bounds.size();
         let painter = ui.painter_at(canvas);
         painter.rect_stroke(
             bounds,
@@ -278,6 +329,14 @@ impl Editor {
                 });
                 let clip = self.p.clips.iter_mut().find(|x| x.id == c.id).unwrap();
                 if scale {
+                    if clip.title.is_some() {
+                        let sy = c.layout.scale_y.unwrap_or(c.layout.scale);
+                        clip.layout.scale_y = Some(
+                            (old.layout.scale_y.unwrap_or(old.layout.scale)
+                                + 2. * d.y / (size.y / sy).max(1.))
+                            .clamp(0.02, 4.),
+                        );
+                    }
                     clip.layout.scale = (old.layout.scale
                         + 2. * d.x / (size.x / c.layout.scale).max(1.))
                     .clamp(0.02, 4.);
@@ -291,6 +350,65 @@ impl Editor {
                 && let Some(old) = self.canvas_drag.take()
             {
                 self.record(old);
+            }
+        }
+    }
+}
+
+pub struct TitleEdit {
+    id: u64,
+    body: String,
+    focus: bool,
+}
+impl Editor {
+    pub fn edit_title(&mut self, id: u64) {
+        if let Some(t) = self.p.clip(id).and_then(|c| c.title.as_ref()) {
+            self.title_edit = Some(TitleEdit {
+                id,
+                body: t.body.clone(),
+                focus: true,
+            });
+            self.selected = Some(id);
+            self.invalidate();
+        }
+    }
+    pub fn title_dialog(&mut self, ctx: &egui::Context) {
+        let Some(draft) = self.title_edit.as_mut() else {
+            return;
+        };
+        let mut apply = false;
+        let mut cancel = false;
+        let dialog = egui::Modal::new("title-editor".into()).show(ctx, |ui| {
+            ui.set_min_width(320.);
+            ui.heading("テキストを編集");
+            let field = ui.add(
+                egui::TextEdit::multiline(&mut draft.body)
+                    .desired_width(320.)
+                    .desired_rows(4),
+            );
+            if draft.focus {
+                field.request_focus();
+                draft.focus = false;
+            }
+            ui.horizontal(|ui| {
+                apply = ui.button("適用").clicked();
+                cancel = ui.button("キャンセル").clicked();
+            });
+        });
+        if apply || cancel || dialog.should_close() {
+            let change = self.title_edit.take().unwrap();
+            if apply {
+                let before = self.p.clone();
+                if let Some(t) = self
+                    .p
+                    .clips
+                    .iter_mut()
+                    .find(|c| c.id == change.id)
+                    .and_then(|c| c.title.as_mut())
+                {
+                    t.body = change.body;
+                }
+                self.record(before);
             }
         }
     }
