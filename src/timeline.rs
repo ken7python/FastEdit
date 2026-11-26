@@ -25,7 +25,7 @@ impl Editor {
             self.seek(self.cursor);
         }
     }
-    fn action(&mut self, mode: u8) {
+    pub fn action(&mut self, mode: u8) {
         if let Some(id) = self.selected {
             let old = self.p.clone();
             if mode == 0 {
@@ -134,7 +134,7 @@ impl Editor {
                                     pos2(px, block.center().y - dy),
                                     pos2(px, block.center().y + dy),
                                 ],
-                                Stroke::new(1., Color32::from_rgb(78, 155, 132)),
+                                Stroke::new(1.0_f32, Color32::from_rgb(78, 155, 132)),
                             );
                         }
                     }
@@ -142,7 +142,7 @@ impl Editor {
                         painter.rect_stroke(
                             block,
                             4.,
-                            Stroke::new(2., Color32::LIGHT_BLUE),
+                            Stroke::new(2.0_f32, Color32::LIGHT_BLUE),
                             StrokeKind::Inside,
                         );
                     }
@@ -218,7 +218,7 @@ impl Editor {
                     pos2(x(self.cursor), rect.top()),
                     pos2(x(self.cursor), rect.bottom()),
                 ],
-                Stroke::new(1.5, Color32::from_rgb(255, 179, 97)),
+                Stroke::new(1.5_f32, Color32::from_rgb(255, 179, 97)),
             );
         });
     }

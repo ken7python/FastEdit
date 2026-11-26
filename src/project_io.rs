@@ -4,10 +4,21 @@ use eframe::egui;
 use std::{collections::HashSet, io::Write, path::Path};
 
 fn save(path: &Path, project: &Project) -> Result<()> {
+    if let Ok(dest) = path.canonicalize() {
+        ensure!(
+            !project
+                .assets
+                .iter()
+                .any(|a| a.path.canonicalize().ok().as_ref() == Some(&dest)),
+            "素材自身には保存できません"
+        );
+    }
     let dir = path.parent().context("保存先フォルダーがありません")?;
     let mut p = project.clone();
     for a in &mut p.assets {
         if let Some(rel) = pathdiff::diff_paths(&a.path, dir) {
+            #[cfg(windows)]
+            let rel = std::path::PathBuf::from(rel.to_string_lossy().replace('\\', "/"));
             a.path = rel;
         }
     }
@@ -119,6 +130,7 @@ impl Editor {
         }
     }
     pub fn open_project(&mut self, path: std::path::PathBuf) {
+        let path = path.canonicalize().unwrap_or(path);
         if !self.allow_discard() {
             return;
         }
@@ -131,8 +143,8 @@ impl Editor {
                 self.redo.clear();
                 self.selected = None;
                 self.texture = None;
-                (self.inbox, self.imports) = std::sync::mpsc::channel();
-                self.importing = false;
+                (self.inbox, self.imports) = crate::media::import_queue();
+                self.importing = 0;
                 self.status.clear();
                 self.seek(0);
             }
@@ -150,8 +162,8 @@ impl Editor {
                     self.selected = None;
                     self.undo.clear();
                     self.redo.clear();
-                    (self.inbox, self.imports) = std::sync::mpsc::channel();
-                    self.importing = false;
+                    (self.inbox, self.imports) = crate::media::import_queue();
+                    self.importing = 0;
                     self.seek(0);
                 }
             }

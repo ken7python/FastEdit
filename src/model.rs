@@ -58,6 +58,8 @@ impl Clip {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct Project {
     pub version: u32,
+    #[serde(default)]
+    pub background: [u8; 3],
     pub width: u32,
     pub height: u32,
     pub rate: Rate,
@@ -69,6 +71,7 @@ impl Default for Project {
     fn default() -> Self {
         Self {
             version: 1,
+            background: [0; 3],
             width: 1920,
             height: 1080,
             rate: Rate { num: 30, den: 1 },

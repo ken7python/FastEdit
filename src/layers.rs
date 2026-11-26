@@ -242,7 +242,7 @@ impl Editor {
         painter.rect_stroke(
             bounds,
             1.,
-            egui::Stroke::new(1., Color32::LIGHT_BLUE),
+            egui::Stroke::new(1.0_f32, Color32::LIGHT_BLUE),
             egui::StrokeKind::Inside,
         );
         let corner =
