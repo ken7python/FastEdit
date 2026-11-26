@@ -38,6 +38,18 @@ impl Editor {
     }
     pub fn tracks(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(
+                    self.p.highest_video_track() < 1023,
+                    egui::Button::new("＋ 映像トラック"),
+                )
+                .clicked()
+            {
+                let before = self.p.clone();
+                self.active_lane = self.p.highest_video_track() + 1;
+                self.p.extra_video_tracks = self.active_lane;
+                self.record(before);
+            }
             for (label, mode) in [("分割", 0), ("削除", 1), ("詰めて削除（全トラック）", 2)]
             {
                 let enabled = self
@@ -60,19 +72,31 @@ impl Editor {
                     .show_value(false),
             );
         });
-        let highest = self.p.clips.iter().map(|c| c.lane).max().unwrap_or(0);
+        let highest = self
+            .p
+            .clips
+            .iter()
+            .map(|c| c.lane)
+            .max()
+            .unwrap_or(0)
+            .max(self.p.highest_video_track());
         let rows: Vec<_> = [Kind::Video, Kind::Audio]
             .into_iter()
             .flat_map(|k| (0..=highest).rev().map(move |l| (k.clone(), l)))
-            .filter(|(k, l)| *l == 0 || self.p.clips.iter().any(|c| c.kind == *k && c.lane == *l))
+            .filter(|(k, l)| {
+                (*k == Kind::Video && *l <= self.p.highest_video_track())
+                    || *l == 0
+                    || self.p.clips.iter().any(|c| c.kind == *k && c.lane == *l)
+            })
             .collect();
         egui::ScrollArea::both().id_salt("tracks").show(ui, |ui| {
             let width = (ui.available_width() - 6.).max(300.) * self.zoom;
             let height = 24. + rows.len() as f32 * 31.;
             let (rect, area) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
-            let pixels = (width - 2.) / self.p.end().max(1) as f32;
-            let x = |frame: i64| rect.left() + frame as f32 * pixels;
-            let to_frame = |px: f32| ((px - rect.left()) / pixels).round() as i64;
+            let origin = rect.left() + 50.;
+            let pixels = (width - 52.) / self.p.end().max(1) as f32;
+            let x = |frame: i64| origin + frame as f32 * pixels;
+            let to_frame = |px: f32| ((px - origin) / pixels).round() as i64;
             let painter = ui.painter_at(rect);
             for n in 0..=10 {
                 let f = self.p.end() * n / 10;
@@ -95,6 +119,27 @@ impl Editor {
                     Rect::from_min_size(pos2(rect.left(), y), vec2(width, 28.)),
                     3.,
                     Color32::from_gray(31),
+                );
+                let header = Rect::from_min_size(pos2(rect.left(), y), vec2(48., 28.));
+                let video = *kind == Kind::Video;
+                if video
+                    && ui
+                        .interact(header, ui.id().with(("row", lane)), Sense::click())
+                        .on_hover_text("このトラックを配置先にする")
+                        .clicked()
+                {
+                    self.active_lane = *lane;
+                }
+                painter.text(
+                    header.center(),
+                    Align2::CENTER_CENTER,
+                    format!("{}{}", if video { "V" } else { "A" }, lane + 1),
+                    FontId::monospace(13.),
+                    if video && self.active_lane == *lane {
+                        Color32::WHITE
+                    } else {
+                        Color32::GRAY
+                    },
                 );
                 for c in self
                     .p
@@ -169,6 +214,9 @@ impl Editor {
                             Color32::WHITE,
                         );
                     if resp.clicked() {
+                        if c.kind == Kind::Video {
+                            self.active_lane = c.lane;
+                        }
                         self.selected = Some(c.id);
                         if let Some(p) = resp.interact_pointer_pos() {
                             self.seek(to_frame(p.x));
