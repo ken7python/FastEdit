@@ -114,6 +114,30 @@ impl Editor {
                         Color32::from_rgb(59, 77, 127)
                     };
                     painter.rect_filled(block, 4., color);
+                    if c.kind == Kind::Audio
+                        && let Some(asset) = self.p.assets.iter().find(|a| a.id == c.asset)
+                        && let Some(detail) = self.cache.entries.get(&asset.path)
+                        && !detail.peaks.is_empty()
+                    {
+                        let visible = block.intersect(ui.clip_rect());
+                        let count = (visible.width() / 3.).max(0.) as usize;
+                        for i in 0..count {
+                            let px = visible.left() + 3. * i as f32;
+                            let src = self.p.rate.seconds(c.offset)
+                                + self.p.rate.seconds(c.len)
+                                    * ((px - block.left()) / block.width()) as f64;
+                            let peak =
+                                detail.peaks[((src / asset.duration * 512.) as usize).min(511)];
+                            let dy = peak.sqrt() * 12.;
+                            painter.line_segment(
+                                [
+                                    pos2(px, block.center().y - dy),
+                                    pos2(px, block.center().y + dy),
+                                ],
+                                Stroke::new(1., Color32::from_rgb(78, 155, 132)),
+                            );
+                        }
+                    }
                     if self.selected == Some(c.id) {
                         painter.rect_stroke(
                             block,

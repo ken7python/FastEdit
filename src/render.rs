@@ -108,8 +108,13 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
             }
             Kind::Audio => {
                 let stream = asset.and_then(|a| a.audio).context("音声がありません")?;
+                let gain = if c.muted {
+                    0.0
+                } else {
+                    10_f32.powf(c.gain_db / 20.)
+                };
                 let samples = (delay * 48000.0).round() as i64;
-                filters.push(format!("[{input}:{stream}]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS,adelay={samples}S:all=1[a{input}]"));
+                filters.push(format!("[{input}:{stream}]aresample=48000,aformat=channel_layouts=stereo,volume={gain},asetpts=PTS-STARTPTS,adelay={samples}S:all=1[a{input}]"));
                 sounds.push(format!("[a{input}]"));
             }
         }

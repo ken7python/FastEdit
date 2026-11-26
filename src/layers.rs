@@ -126,6 +126,8 @@ impl Editor {
         self.p.clips.push(Clip {
             id,
             asset: 0,
+            gain_db: 0.,
+            muted: false,
             kind: Kind::Video,
             lane,
             start: self.cursor,
