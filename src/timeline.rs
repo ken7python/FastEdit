@@ -180,9 +180,9 @@ impl Editor {
                     );
                     let resp = ui.interact(block, ui.id().with(c.id), Sense::click_and_drag());
                     let color = if c.kind == Kind::Audio {
-                        Color32::from_rgb(34, 91, 81)
+                        Color32::from_gray(53)
                     } else {
-                        Color32::from_rgb(59, 77, 127)
+                        Color32::from_gray(66)
                     };
                     painter.rect_filled(block, 4., color);
                     if c.kind == Kind::Audio
@@ -205,7 +205,7 @@ impl Editor {
                                     pos2(px, block.center().y - dy),
                                     pos2(px, block.center().y + dy),
                                 ],
-                                Stroke::new(1.0_f32, Color32::from_rgb(78, 155, 132)),
+                                Stroke::new(1.0_f32, Color32::from_gray(133)),
                             );
                         }
                     }
@@ -213,7 +213,7 @@ impl Editor {
                         painter.rect_stroke(
                             block,
                             4.,
-                            Stroke::new(2.0_f32, Color32::LIGHT_BLUE),
+                            Stroke::new(2.0_f32, theme::GREEN),
                             StrokeKind::Inside,
                         );
                     }
@@ -343,7 +343,7 @@ impl Editor {
                     pos2(x(self.cursor), rect.top()),
                     pos2(x(self.cursor), rect.bottom()),
                 ],
-                Stroke::new(1.5_f32, Color32::from_rgb(255, 179, 97)),
+                Stroke::new(1.5_f32, Color32::WHITE),
             );
         });
     }

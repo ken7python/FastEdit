@@ -1,5 +1,5 @@
 use crate::{Editor, Project};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, Color32};
 
 pub const FORMATS: [(&str, u32, u32); 4] = [
     ("Full HD", 1920, 1080),
@@ -15,7 +15,7 @@ impl Editor {
             let rect =
                 egui::Rect::from_center_size(ui.max_rect().center(), egui::vec2(width, 370.));
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                ui.label(RichText::new("FastEdit").size(36.).strong());
+                crate::theme::brand(ui, 36.);
                 ui.add_space(18.);
                 ui.heading("新規プロジェクト");
                 ui.label("動画の画面サイズを選択");
@@ -32,7 +32,7 @@ impl Editor {
                             Color32::from_gray(if response.hovered() { 48 } else { 35 }),
                         );
                         let accent = if selected {
-                            Color32::from_rgb(30, 215, 96)
+                            crate::theme::GREEN
                         } else {
                             Color32::from_gray(179)
                         };
@@ -40,7 +40,7 @@ impl Editor {
                             painter.rect_stroke(
                                 card,
                                 8.,
-                                egui::Stroke::new(2., accent),
+                                egui::Stroke::new(2_f32, accent),
                                 egui::StrokeKind::Inside,
                             );
                         }
@@ -52,7 +52,7 @@ impl Editor {
                         painter.rect_stroke(
                             icon,
                             2.,
-                            egui::Stroke::new(2., accent),
+                            egui::Stroke::new(2_f32, accent),
                             egui::StrokeKind::Inside,
                         );
                         painter.text(
@@ -84,7 +84,11 @@ impl Editor {
                 });
                 ui.add_space(14.);
                 ui.horizontal(|ui| {
-                    if ui.button("プロジェクトを作成").clicked() && self.allow_discard() {
+                    if ui
+                        .add(crate::theme::primary("プロジェクトを作成"))
+                        .clicked()
+                        && self.allow_discard()
+                    {
                         let project = Project {
                             width: self.new_size[0],
                             height: self.new_size[1],

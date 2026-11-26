@@ -8,6 +8,7 @@ mod model;
 mod playback;
 mod project_io;
 mod render;
+mod theme;
 mod timeline;
 use eframe::egui::{self, Color32, RichText};
 use model::*;
@@ -88,14 +89,7 @@ fn fonts(ctx: &egui::Context) -> Vec<String> {
 impl Editor {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let families = fonts(&cc.egui_ctx);
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = Color32::from_rgb(29, 32, 39);
-        visuals.selection.bg_fill = Color32::from_rgb(47, 95, 119);
-        cc.egui_ctx.set_visuals(visuals);
-        cc.egui_ctx.style_mut(|s| {
-            s.spacing.button_padding = egui::vec2(8., 4.);
-            s.spacing.item_spacing = egui::vec2(6., 5.);
-        });
+        theme::apply(&cc.egui_ctx);
         let (inbox, imports) = media::import_queue();
         let mut app = Self {
             p: Project::default(),
@@ -283,7 +277,7 @@ impl Editor {
     }
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("FastEdit");
+            theme::brand(ui, 22.);
             self.file_menu(ui);
             if ui
                 .add_enabled(!self.undo.is_empty(), egui::Button::new("元に戻す"))
@@ -304,7 +298,7 @@ impl Editor {
             if ui
                 .add_enabled(
                     self.p.end() > 0 && self.export.is_none(),
-                    egui::Button::new("動画を書き出す"),
+                    theme::primary("書き出す"),
                 )
                 .clicked()
             {
@@ -319,67 +313,83 @@ impl Editor {
         });
     }
     fn library(&mut self, ui: &mut egui::Ui) {
-        ui.heading("素材");
+        ui.heading(
+            RichText::new("素材ライブラリ")
+                .color(Color32::WHITE)
+                .strong(),
+        );
         if ui.button("テキストを追加").clicked() {
             self.add_title();
         }
         ui.separator();
         for a in self.p.assets.clone() {
-            if let Some(t) = self
-                .cache
-                .entries
-                .get(&a.path)
-                .and_then(|d| d.thumbnail.as_ref())
-            {
-                ui.add(egui::Image::new(t).max_width(ui.available_width().min(144.)));
-            }
-            let name = a.path.file_name().unwrap_or_default().to_string_lossy();
-            ui.label(RichText::new(name.as_ref()).strong());
-            ui.small(format!("{:.1} 秒", a.duration));
-            if !a.path.exists() && ui.button("素材を再指定…").clicked() {
-                self.relink(a.id);
-            }
-            if a.video.is_some()
-                && ui
-                    .small_button(format!("V{} に配置", self.active_lane + 1))
-                    .on_hover_text("選択中のトラックの再生位置に配置")
-                    .clicked()
-            {
-                let before = self.p.clone();
-                self.selected = Some(self.p.place(&a, self.cursor, self.active_lane));
-                self.record(before);
-            }
-            if a.video.is_some() && ui.small_button("上に重ねる").clicked() {
-                let before = self.p.clone();
-                let lane = self.front_lane();
-                self.active_lane = lane;
-                let id = self.p.place(&a, self.cursor, lane);
-                if let Some(c) = self.p.clips.iter_mut().find(|c| c.id == id) {
-                    c.layout.scale = 0.45;
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                if let Some(t) = self
+                    .cache
+                    .entries
+                    .get(&a.path)
+                    .and_then(|d| d.thumbnail.as_ref())
+                {
+                    ui.add(
+                        egui::Image::new(t)
+                            .fit_to_exact_size(egui::vec2(
+                                ui.available_width(),
+                                ui.available_width() / 1.8,
+                            ))
+                            .corner_radius(5.),
+                    );
                 }
-                self.selected = Some(id);
-                self.record(before);
-            }
-            if a.audio.is_some() && ui.small_button("音声を追加").clicked() {
-                let before = self.p.clone();
-                let mut audio = a.clone();
-                audio.video = None;
-                let lane = self.front_lane();
-                self.selected = Some(self.p.place(&audio, self.cursor, lane));
-                self.record(before);
-            }
-            if ui.small_button("末尾につなぐ").clicked() {
-                let before = self.p.clone();
-                self.selected = Some(self.p.place(&a, self.p.end(), 0));
-                self.record(before);
-                self.invalidate();
-            }
-            ui.separator();
+                let name = a.path.file_name().unwrap_or_default().to_string_lossy();
+                ui.label(RichText::new(name.as_ref()).strong());
+                ui.small(format!("{:.1} 秒", a.duration));
+                if !a.path.exists() && ui.button("素材を再指定…").clicked() {
+                    self.relink(a.id);
+                }
+                if a.video.is_some()
+                    && ui
+                        .small_button(format!("V{} に配置", self.active_lane + 1))
+                        .on_hover_text("選択中のトラックの再生位置に配置")
+                        .clicked()
+                {
+                    let before = self.p.clone();
+                    self.selected = Some(self.p.place(&a, self.cursor, self.active_lane));
+                    self.record(before);
+                }
+                ui.menu_button("その他の配置…", |ui| {
+                    if a.video.is_some() && ui.small_button("上に重ねる").clicked() {
+                        let before = self.p.clone();
+                        let lane = self.front_lane();
+                        self.active_lane = lane;
+                        let id = self.p.place(&a, self.cursor, lane);
+                        if let Some(c) = self.p.clips.iter_mut().find(|c| c.id == id) {
+                            c.layout.scale = 0.45;
+                        }
+                        self.selected = Some(id);
+                        self.record(before);
+                    }
+                    if a.audio.is_some() && ui.small_button("音声を追加").clicked() {
+                        let before = self.p.clone();
+                        let mut audio = a.clone();
+                        audio.video = None;
+                        let lane = self.front_lane();
+                        self.selected = Some(self.p.place(&audio, self.cursor, lane));
+                        self.record(before);
+                    }
+                    if ui.small_button("末尾につなぐ").clicked() {
+                        let before = self.p.clone();
+                        self.selected = Some(self.p.place(&a, self.p.end(), 0));
+                        self.record(before);
+                        self.invalidate();
+                    }
+                });
+            });
+            ui.add_space(3.);
         }
     }
     fn timeline(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("再生 / 停止").clicked() {
+            if theme::transport(ui, self.preview.as_ref().is_some_and(|p| p.playing)) {
                 self.toggle();
             }
             if ui.button("◀").clicked() {
@@ -414,7 +424,7 @@ impl Editor {
         self.tracks(ui);
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
-        ui.heading("設定");
+        ui.heading(RichText::new("プロパティ").color(Color32::WHITE).strong());
         self.canvas_settings(ui);
         if let Some(c) = self.selected.and_then(|id| self.p.clip(id)).cloned() {
             ui.separator();
@@ -478,8 +488,7 @@ impl Editor {
     }
     fn canvas(&mut self, ui: &mut egui::Ui) {
         let avail = ui.available_rect_before_wrap();
-        ui.painter()
-            .rect_filled(avail, 6., Color32::from_rgb(15, 17, 21));
+        ui.painter().rect_filled(avail, 6., Color32::from_gray(12));
         if let Some(t) = &self.texture {
             let size = t.size_vec2();
             let scale = (avail.width() / size.x).min(avail.height() / size.y);
@@ -487,6 +496,13 @@ impl Editor {
             ui.put(rect, egui::Image::new(t).fit_to_exact_size(rect.size()));
             self.overlay_handles(ui, rect);
         } else {
+            let ratio = self.p.width as f32 / self.p.height as f32;
+            let w = avail.width().min(avail.height() * ratio);
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(avail.center(), egui::vec2(w, w / ratio)),
+                1.,
+                Color32::BLACK,
+            );
             let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(200., 36.));
             if ui
                 .put(rect, egui::Button::new("動画・画像・音声を追加"))
@@ -566,10 +582,10 @@ impl eframe::App for Editor {
         });
         egui::TopBottomPanel::bottom("timeline")
             .resizable(true)
-            .default_height(210.)
+            .default_height(245.)
             .show(ctx, |ui| self.timeline(ui));
         egui::SidePanel::left("library")
-            .default_width(185.)
+            .default_width(220.)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.library(ui))
             });
