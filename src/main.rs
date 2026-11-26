@@ -2,6 +2,7 @@
 mod media;
 mod model;
 mod playback;
+mod project_io;
 mod render;
 mod timeline;
 use eframe::egui::{self, Color32, RichText};
@@ -14,6 +15,8 @@ use std::{
 
 struct Editor {
     p: Project,
+    saved: Project,
+    path: Option<PathBuf>,
     selected: Option<u64>,
     undo: Vec<Project>,
     redo: Vec<Project>,
@@ -67,6 +70,8 @@ impl Editor {
         let (inbox, imports) = mpsc::channel();
         let mut app = Self {
             p: Project::default(),
+            saved: Project::default(),
+            path: None,
             selected: None,
             undo: vec![],
             redo: vec![],
@@ -90,6 +95,10 @@ impl Editor {
         app
     }
     fn import(&mut self, path: PathBuf) {
+        if path.extension().is_some_and(|x| x == "fastedit") {
+            self.open_project(path);
+            return;
+        }
         let tx = self.inbox.clone();
         self.importing = true;
         std::thread::spawn(move || {
@@ -227,6 +236,7 @@ impl Editor {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.heading("FastEdit");
+            self.file_menu(ui);
             if ui
                 .add_enabled(!self.undo.is_empty(), egui::Button::new("元に戻す"))
                 .clicked()
@@ -267,6 +277,9 @@ impl Editor {
             let name = a.path.file_name().unwrap_or_default().to_string_lossy();
             ui.label(RichText::new(name.as_ref()).strong());
             ui.small(format!("{:.1} 秒", a.duration));
+            if !a.path.exists() && ui.button("素材を再指定…").clicked() {
+                self.relink(a.id);
+            }
             if ui.small_button("末尾につなぐ").clicked() {
                 let before = self.p.clone();
                 self.selected = Some(self.p.place(&a, self.p.end(), 0));
@@ -347,6 +360,12 @@ impl Editor {
 impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
+        if ctx.input(|i| i.viewport().close_requested()) && !self.allow_discard() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.save_project(false);
+        }
         for path in ctx.input(|i| {
             i.raw
                 .dropped_files
