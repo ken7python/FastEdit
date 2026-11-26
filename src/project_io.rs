@@ -37,7 +37,8 @@ fn load(path: &Path) -> Result<Project> {
     );
     let mut p: Project = serde_json::from_value(data)?;
     ensure!(
-        (2..=16384).contains(&p.width)
+        p.extra_video_tracks < 1024
+            && (2..=16384).contains(&p.width)
             && (2..=16384).contains(&p.height)
             && p.rate.num > 0
             && p.rate.den > 0,
@@ -141,6 +142,7 @@ impl Editor {
     }
     pub fn enter_project(&mut self, p: Project, path: Option<std::path::PathBuf>) {
         self.home = false;
+        self.active_lane = 0;
         self.return_to_editor = false;
         self.drag = None;
         self.canvas_drag = None;

@@ -63,6 +63,8 @@ pub struct Project {
     pub width: u32,
     pub height: u32,
     pub rate: Rate,
+    #[serde(default)]
+    pub extra_video_tracks: u32,
     pub assets: Vec<Asset>,
     pub clips: Vec<Clip>,
     pub next: u64,
@@ -75,6 +77,7 @@ impl Default for Project {
             width: 1920,
             height: 1080,
             rate: Rate { num: 30, den: 1 },
+            extra_video_tracks: 0,
             assets: vec![],
             clips: vec![],
             next: 1,
@@ -82,6 +85,15 @@ impl Default for Project {
     }
 }
 impl Project {
+    pub fn highest_video_track(&self) -> u32 {
+        self.clips
+            .iter()
+            .filter(|c| c.kind == Kind::Video)
+            .map(|c| c.lane)
+            .max()
+            .unwrap_or(0)
+            .max(self.extra_video_tracks)
+    }
     pub fn id(&mut self) -> u64 {
         let n = self.next;
         self.next += 1;

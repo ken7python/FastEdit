@@ -31,6 +31,7 @@ struct Editor {
     undo: Vec<Project>,
     redo: Vec<Project>,
     zoom: f32,
+    active_lane: u32,
     drag: Option<(Project, Handle, f32)>,
     cursor: i64,
     preview: Option<playback::Preview>,
@@ -108,6 +109,7 @@ impl Editor {
             undo: vec![],
             redo: vec![],
             zoom: 1.,
+            active_lane: 0,
             drag: None,
             cursor: 0,
             preview: None,
@@ -185,7 +187,7 @@ impl Editor {
                     let start = self.p.end();
                     let first = self.p.assets.is_empty();
                     if first {
-                        self.selected = Some(self.p.place(&a, start, 0));
+                        self.selected = Some(self.p.place(&a, start, self.active_lane));
                     }
                     self.p.assets.push(a);
                     self.record(before);
@@ -333,9 +335,20 @@ impl Editor {
             if !a.path.exists() && ui.button("素材を再指定…").clicked() {
                 self.relink(a.id);
             }
+            if a.video.is_some()
+                && ui
+                    .small_button(format!("V{} に配置", self.active_lane + 1))
+                    .on_hover_text("選択中のトラックの再生位置に配置")
+                    .clicked()
+            {
+                let before = self.p.clone();
+                self.selected = Some(self.p.place(&a, self.cursor, self.active_lane));
+                self.record(before);
+            }
             if a.video.is_some() && ui.small_button("上に重ねる").clicked() {
                 let before = self.p.clone();
                 let lane = self.front_lane();
+                self.active_lane = lane;
                 let id = self.p.place(&a, self.cursor, lane);
                 if let Some(c) = self.p.clips.iter_mut().find(|c| c.id == id) {
                     c.layout.scale = 0.45;
@@ -481,6 +494,7 @@ impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
         self.cache.sync(ctx, &self.p.assets);
+        self.active_lane = self.active_lane.min(self.p.highest_video_track());
         if ctx.input(|i| i.viewport().close_requested()) {
             if !self.close_approved {
                 self.close_approved = self.allow_discard();

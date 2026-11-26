@@ -110,7 +110,12 @@ impl Editor {
     pub fn add_title(&mut self) {
         let old = self.p.clone();
         let id = self.p.id();
-        let lane = self.front_lane();
+        let lane = if self.active_lane == 0 {
+            self.front_lane()
+        } else {
+            self.active_lane
+        };
+        self.active_lane = lane;
         let font = self
             .families
             .iter()
@@ -153,6 +158,7 @@ impl Editor {
             .map(|c| c.lane)
             .max()
             .unwrap_or(0)
+            .max(self.p.highest_video_track())
             .saturating_add(1)
             .min(1023)
     }
