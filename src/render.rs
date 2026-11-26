@@ -82,7 +82,7 @@ pub fn build(p: &Project, from: i64, w: u32, h: u32, output: Output, single: boo
             .context("素材が見つかりません")?;
         let delay = rate.seconds(begin - from);
         let duration = rate.seconds(finish - begin);
-        let seek = c.offset as f64 / 1_000_000.0 + rate.seconds(begin - c.start);
+        let seek = rate.seconds(c.offset + begin - c.start);
         if asset.image {
             cmd.args(["-loop", "1", "-framerate", &fps]);
         } else if seek > 0.0 {
