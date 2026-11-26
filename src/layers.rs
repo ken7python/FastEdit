@@ -299,12 +299,12 @@ impl Editor {
         painter.rect_stroke(
             bounds,
             1.,
-            egui::Stroke::new(1.0_f32, Color32::LIGHT_BLUE),
+            egui::Stroke::new(1.0_f32, theme::GREEN),
             egui::StrokeKind::Inside,
         );
         let corner =
             egui::Rect::from_center_size(bounds.max, egui::vec2(14., 14.)).intersect(canvas);
-        painter.rect_filled(corner, 2., Color32::LIGHT_BLUE);
+        painter.rect_filled(corner, 2., theme::GREEN);
         for (rect, scale) in [(bounds.intersect(canvas), false), (corner, true)] {
             if !rect.is_positive() {
                 continue;
