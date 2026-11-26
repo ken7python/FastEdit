@@ -1,4 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod asset_preview;
 mod layers;
 mod media;
 mod model;
@@ -19,6 +20,7 @@ struct Editor {
     saved: Project,
     path: Option<PathBuf>,
     selected: Option<u64>,
+    cache: asset_preview::Cache,
     families: Vec<String>,
     canvas_drag: Option<Project>,
     undo: Vec<Project>,
@@ -83,6 +85,7 @@ impl Editor {
             saved: Project::default(),
             path: None,
             selected: None,
+            cache: asset_preview::Cache::new(),
             families,
             canvas_drag: None,
             undo: vec![],
@@ -294,6 +297,14 @@ impl Editor {
         ui.heading("素材");
         ui.separator();
         for a in self.p.assets.clone() {
+            if let Some(t) = self
+                .cache
+                .entries
+                .get(&a.path)
+                .and_then(|d| d.thumbnail.as_ref())
+            {
+                ui.add(egui::Image::new(t).max_width(ui.available_width().min(144.)));
+            }
             let name = a.path.file_name().unwrap_or_default().to_string_lossy();
             ui.label(RichText::new(name.as_ref()).strong());
             ui.small(format!("{:.1} 秒", a.duration));
@@ -308,6 +319,14 @@ impl Editor {
                     c.layout.scale = 0.45;
                 }
                 self.selected = Some(id);
+                self.record(before);
+            }
+            if a.audio.is_some() && ui.small_button("音声を追加").clicked() {
+                let before = self.p.clone();
+                let mut audio = a.clone();
+                audio.video = None;
+                let lane = self.front_lane();
+                self.selected = Some(self.p.place(&audio, self.cursor, lane));
                 self.record(before);
             }
             if ui.small_button("末尾につなぐ").clicked() {
@@ -343,6 +362,16 @@ impl Editor {
         {
             self.seek(pos);
         }
+        if let Some(p) = &self.preview
+            && p.playing
+        {
+            let level = f32::from_bits(p.peak.load(Ordering::Relaxed));
+            ui.add(
+                egui::ProgressBar::new(level.min(1.))
+                    .desired_width(160.)
+                    .text(format!("ピーク {:.0} dB", 20. * level.max(0.0001).log10())),
+            );
+        }
         self.tracks(ui);
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -351,6 +380,43 @@ impl Editor {
         if let Some(c) = self.selected.and_then(|id| self.p.clip(id)).cloned() {
             ui.separator();
             self.layer_settings(ui, c.id);
+            if let Some(group) = c.link
+                && self
+                    .p
+                    .clips
+                    .iter()
+                    .filter(|x| x.link == Some(group))
+                    .count()
+                    > 1
+                && ui.button("音声を切り離す").clicked()
+            {
+                let before = self.p.clone();
+                for item in &mut self.p.clips {
+                    if item.link == Some(group) {
+                        item.link = None;
+                    }
+                }
+                self.record(before);
+            }
+            let audio_id = if c.kind == Kind::Audio {
+                Some(c.id)
+            } else {
+                c.link.and_then(|link| {
+                    self.p
+                        .clips
+                        .iter()
+                        .find(|x| x.link == Some(link) && x.kind == Kind::Audio)
+                        .map(|x| x.id)
+                })
+            };
+            if let Some(id) = audio_id {
+                let before = self.p.clone();
+                if let Some(audio) = self.p.clips.iter_mut().find(|x| x.id == id) {
+                    ui.checkbox(&mut audio.muted, "ミュート");
+                    ui.add(egui::Slider::new(&mut audio.gain_db, -60.0..=24.0).text("音量 dB"));
+                }
+                self.record(before);
+            }
             ui.label("クリップ（フレーム）");
             for (label, value, handle) in [
                 ("開始", c.start, Handle::Body),
@@ -392,6 +458,7 @@ impl Editor {
 impl eframe::App for Editor {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.poll(ctx);
+        self.cache.sync(ctx, &self.p.assets);
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_discard() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }

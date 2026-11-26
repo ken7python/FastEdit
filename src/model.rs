@@ -45,6 +45,10 @@ pub struct Clip {
     pub layout: crate::layers::Layout,
     #[serde(default)]
     pub title: Option<crate::layers::Title>,
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
 }
 impl Clip {
     pub fn end(&self) -> i64 {
@@ -107,6 +111,8 @@ impl Project {
                     link: Some(group),
                     layout: Default::default(),
                     title: None,
+                    gain_db: 0.,
+                    muted: false,
                 });
             }
         }
